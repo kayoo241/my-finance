@@ -76,12 +76,16 @@ svg.ch text{fill:var(--mut);font:9px Manrope,sans-serif}
  .ov{align-items:center}.sheet{border-radius:22px}
 }
 #auth{position:fixed;inset:0;z-index:50;background:var(--bg);display:none;place-items:center;padding:20px}#auth.on{display:grid}#auth .card{width:100%;max-width:380px;margin:0}
+input[type=checkbox]{width:20px;height:20px;padding:0;flex:none}.row select{width:140px;padding:8px}.irow{align-items:flex-start}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body>
 <div id="app"><nav id="nav"></nav><main id="view"></main></div>
 <div id="auth"><div class="card"><h1 style="margin-bottom:4px">MY FINANCE</h1><p class="sub">Войдите, чтобы открыть свои данные</p><label for="a-e">Почта</label><input id="a-e" type="email" autocomplete="username"><label for="a-p">Пароль</label><input id="a-p" type="password" autocomplete="current-password"><div class="err" id="aerr"></div><button class="btn" style="width:100%" data-a="login">Войти</button></div></div>
+<input type="file" id="imp-f" accept=".xls,.xlsx" hidden data-c="impfile">
+<div class="ov" id="imp"><div class="sheet"><div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">Импорт выписки</h2><button class="x" data-a="impClose" aria-label="Закрыть">✕</button></div><p class="sub" id="imp-s" style="margin:8px 0 6px"></p><div id="imp-l"></div><button class="btn" id="imp-b" style="width:100%;margin-top:12px" data-a="impGo">Добавить</button></div></div>
 <button class="fab" data-a="open" aria-label="Добавить операцию">+ Операция</button>
 <div class="ov" id="ov"><div class="sheet" role="dialog" aria-label="Новая операция">
  <div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">Новая операция</h2><button class="x" data-a="close" aria-label="Закрыть">✕</button></div>
@@ -101,12 +105,12 @@ const empty=()=>({tx:[],budgets:{},goals:[],bills:[],settings:{name:'',theme:'li
 async function loadAll(){
  const R=await Promise.all(['transactions','budgets','goals','bills','settings'].map(t=>T(t).select('*')));
  const bad=R.find(r=>r.error);if(bad)throw bad.error;const[a,b,c,d,e]=R;
- S={tx:a.data.map(r=>({id:r.id,ts:r.created_at||'',type:r.type,amount:+r.amount,cat:r.category,sub:r.subcategory||'',date:r.date,com:r.comment||'',pay:r.payment_method||''})),
+ S={tx:a.data.map(r=>({id:r.id,ts:r.created_at||'',type:r.type,amount:+r.amount,cat:r.category,sub:r.subcategory||'',date:r.date,com:r.comment||'',pay:r.payment_method||'',key:r.import_key||''})),
   budgets:Object.fromEntries(b.data.map(r=>[r.category,+r.monthly_limit])),
   goals:c.data.map(r=>({id:r.id,name:r.name,target:+r.target,saved:+r.saved,date:r.deadline||''})),
   bills:d.data.map(r=>({id:r.id,name:r.name,amount:+r.amount,day:r.day_of_month})),
   settings:e.data[0]?{name:e.data[0].name||'',theme:e.data[0].theme||'light',cur:e.data[0].currency||'₽'}:empty().settings}}
-const CATS={expense:['Продукты','Транспорт','Жильё','Здоровье','Кафе и рестораны','Покупки','Подписки','Развлечения','Прочее'],income:['Зарплата','Подработка','Подарки','Прочее']};
+const CATS={expense:['Продукты','Транспорт','Жильё','Здоровье','Кафе и рестораны','Покупки','Подписки','Развлечения','Кредиты','Прочее'],income:['Зарплата','Подработка','Подарки','Прочее']};
 const MN=['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'];
 const TABS=[['home','Главная','M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z'],['ops','Операции','M4 7h13M13 3l4 4-4 4M20 17H7M11 13l-4 4 4 4'],['stats','Аналитика','M4 20V10M10 20V4M16 20v-7M22 20H2'],['budget','Бюджет','M12 3a9 9 0 1 0 9 9h-9z'],['goals','Цели','M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8z'],['settings','Настройки','M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1']];
 const TITLES=Object.fromEntries(TABS.map(t=>[t[0],t[1]]));
@@ -175,7 +179,7 @@ home(){const[a,b]=monthRange(),inc=sum(a,b,'income'),exp=sum(a,b,'expense'),bal=
  <div class="card"><h2>Ближайшие платежи</h2>${nb.length?nb.map(x=>`<div class="row"><div class="grow"><div class="t">${esc(x.name)}</div><div class="sub">${fd(x.date)} · ${x.left===0?'сегодня':'через '+x.left+' дн.'}</div></div><div class="num">${m(x.amount)}</div></div>`).join(''):'<p class="empty">Обязательных платежей нет. Добавьте их в разделе «Бюджет».</p>'}</div>
  <div class="card"><h2>Рекомендации</h2>${tips().map(t=>`<div class="tip">${t}</div>`).join('')}</div>`},
 ops(){const l=[...S.tx].filter(x=>flt==='all'||x.type===flt).sort((x,y)=>y.date.localeCompare(x.date)||y.ts.localeCompare(x.ts));
- return `<div class="top"><h1>Операции</h1></div><div class="chips">${[['all','Все'],['income','Доходы'],['expense','Расходы']].map(([k,n])=>`<button class="chip ${flt===k?'on':''}" data-a="flt" data-v="${k}">${n}</button>`).join('')}</div>
+ return `<div class="top"><h1>Операции</h1><button class="btn sm" data-a="impPick">Импорт выписки</button></div><div class="chips">${[['all','Все'],['income','Доходы'],['expense','Расходы']].map(([k,n])=>`<button class="chip ${flt===k?'on':''}" data-a="flt" data-v="${k}">${n}</button>`).join('')}</div>
  <div class="card">${l.length?l.map(x=>txRow(x).replace(/<\/div><\/div>$/,`</div><button class="x" data-a="del" data-v="${x.id}" aria-label="Удалить">✕</button></div>`)).join(''):'<p class="empty">Здесь появятся ваши доходы и расходы.</p>'}</div>`},
 stats(){const bk=buckets(per),a=bk[0].a,b=bk[bk.length-1].b,inc=sum(a,b,'income'),exp=sum(a,b,'expense'),nm={day:'7 дней',week:'8 недель',month:'12 месяцев',year:'5 лет'}[per];
  return `<div class="top"><div><h1>Аналитика</h1><div class="sub">Период: ${nm}</div></div></div><div class="chips">${[['day','Дни'],['week','Недели'],['month','Месяцы'],['year','Годы']].map(([k,n])=>`<button class="chip ${per===k?'on':''}" data-a="per" data-v="${k}">${n}</button>`).join('')}</div>
@@ -225,9 +229,44 @@ wipe(){if(!wipe){wipe=true;render();return}wipe=false;sync(Promise.all([T('trans
 };
 document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(b)A[b.dataset.a](b);else if(e.target.id==='ov')A.close()});
 document.addEventListener('change',e=>{const c=e.target.dataset.c;if(!c)return;
+ if(c==='impfile'){const f=e.target.files[0];e.target.value='';if(f)f.arrayBuffer().then(b=>{try{const wb=XLSX.read(b,{type:'array'});impLoad(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:true,defval:''}))}catch(err){alert('Не удалось прочитать файл: '+err.message)}});return}
+ if(c==='impcat'){IMP[+e.target.dataset.v].cat=e.target.value;return}
+ if(c==='impon'){IMP[+e.target.dataset.v].on=e.target.checked;impSum();return}
  if(c==='lim'){const k=e.target.dataset.v,v=parseFloat(e.target.value);sync(v>0?T('budgets').upsert({user_id:UID,category:k,monthly_limit:v}):T('budgets').delete().eq('category',k))}
  else{S.settings[c]=e.target.value;theme();const t=S.settings;sync(T('settings').upsert({user_id:UID,name:t.name,theme:t.theme,currency:t.cur}))}});
 document.addEventListener('keydown',e=>{if(e.key==='Escape')A.close()});
+/*IMP-START*/
+const NUM=v=>typeof v==='number'?v:parseFloat(String(v).replace(/[\s\u00A0]/g,'').replace(',','.'));
+const MER=[[/PYATEROCHKA|PEREKRESTOK|SPAR\b|KRASNOE|ZELYONYJ|WINELAB|VV_\d/i,'Продукты'],[/Vkusnoitochka/i,'Кафе и рестораны'],[/Metro|Park Kultury|PROSPEKT MIRA/i,'Транспорт'],[/OZON/i,'Покупки']];
+function classify(r){
+ const m=String(r[0]||'').match(/^(\d\d)\.(\d\d)\.(\d{4})\s+(\d\d:\d\d)/),amt0=NUM(r[1]),amt=(isFinite(amt0)&&amt0!==0)?amt0:NUM(r[2]);
+ if(!m||!isFinite(amt)||amt===0)return null;
+ const d=String(r[4]||'').replace(/\s+/g,' ').trim();let skip='',cat='Прочее',label=d.slice(0,40);
+ if(/^Перечисление на счет Копилки/i.test(d))skip='копилка';
+ else if(/^Перевод собственных средств/i.test(d))skip='переводы между своими';
+ else if(/^ATM\s*\d+/i.test(d))skip='наличные';
+ else if(/^Перевод согласно распоряжению/i.test(d))label='Перевод по СБП';
+ else if(/^Зачисление перевода/i.test(d))label='Входящий перевод по СБП';
+ else if(/^Оплата по СБП/i.test(d))label='Оплата по СБП';
+ else if(/^ПОГАШЕНИЕ КРЕДИТА/i.test(d)){label='Погашение кредита';cat='Кредиты'}
+ else if(/^Начисление бонуса/i.test(d))label='Бонусы банка';
+ else if(/^Комиссия/i.test(d))label='Комиссия банка';
+ else{const h=MER.find(x=>x[0].test(d));if(h)cat=h[1]}
+ return{date:m[3]+'-'+m[2]+'-'+m[1],amt:Math.abs(amt),type:amt>0?'income':'expense',cat,label,skip,card:!!r[5],key:m[0]+'|'+amt+'|'+d.slice(0,30)}}
+/*IMP-END*/
+let IMP=[];
+function impLoad(rows){const have=new Set(S.tx.map(x=>x.key).filter(Boolean));
+ const seen={};IMP=rows.map(classify).filter(Boolean).map(x=>{seen[x.key]=(seen[x.key]||0)+1;if(seen[x.key]>1)x.key+='#'+seen[x.key];return x}).map(x=>({...x,dup:have.has(x.key),on:!x.skip&&!have.has(x.key)}));
+ if(!IMP.some(x=>!x.skip)){alert('Не нашёл операций в файле. Пока поддерживается выписка Совкомбанка (.xls).');return}
+ $('#imp-l').innerHTML=IMP.map((x,i)=>x.skip?'':`<div class="row irow"><input type="checkbox" data-c="impon" data-v="${i}" ${x.on?'checked':''} ${x.dup?'disabled':''} aria-label="Добавить"><div class="grow"><div class="t">${esc(x.label)}</div><div class="sub">${fd(x.date)}${x.dup?' · уже добавлена':''}</div></div><div style="text-align:right"><div class="num ${x.type==='income'?'inc':'exp'}">${x.type==='income'?'+':'−'}${m(x.amt)}</div><select data-c="impcat" data-v="${i}" aria-label="Категория">${CATS[x.type].map(c=>`<option ${c===x.cat?'selected':''}>${c}</option>`).join('')}</select></div></div>`).join('');
+ impSum();$('#imp').classList.add('on')}
+function impSum(){const on=IMP.filter(x=>x.on),sk={};IMP.filter(x=>x.skip).forEach(x=>sk[x.skip]=(sk[x.skip]||0)+1);
+ const i=on.filter(x=>x.type==='income').reduce((a,x)=>a+x.amt,0),e=on.filter(x=>x.type==='expense').reduce((a,x)=>a+x.amt,0),d=IMP.filter(x=>x.dup).length;
+ $('#imp-s').innerHTML=`Выбрано: ${on.length}. Доходы ${m(i)}, расходы ${m(e)}.<br>Скрыто: ${Object.entries(sk).map(([k,v])=>k+' — '+v).join(', ')||'ничего'}${d?`.<br>Уже в базе: ${d}`:''}.`;
+ $('#imp-b').textContent='Добавить '+on.length;$('#imp-b').disabled=!on.length}
+Object.assign(A,{impPick(){$('#imp-f').click()},impClose(){$('#imp').classList.remove('on')},
+ impGo(){const rows=IMP.filter(x=>x.on).map(x=>({user_id:UID,type:x.type,amount:x.amt,category:x.cat,date:x.date,comment:x.label,payment_method:x.card?'Карта':'СБП / перевод',import_key:x.key}));
+  A.impClose();sync(T('transactions').upsert(rows,{onConflict:'user_id,import_key',ignoreDuplicates:true}))}});
 function route(){const h=location.hash.slice(1);tab=V[h]?h:'home';wipe=false;render();window.scrollTo(0,0)}
 addEventListener('hashchange',route);
 async function enter(ses){
