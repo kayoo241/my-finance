@@ -168,6 +168,20 @@ function tips(){
  Object.entries(S.budgets).forEach(([c,l])=>{if((map[c]||0)>l)r.push(`Лимит по «${esc(c)}» превышен на ${m(map[c]-l)}.`)});
  return r.length?r:['Пока всё спокойно. Задайте лимиты в разделе «Бюджет», чтобы получать больше подсказок.']}
 
+/* ---------- Советчик по целям: считает только из ваших данных ---------- */
+function adv(g){
+ const left=Math.max(0,g.target-g.saved);
+ if(!left)return '<div class="tip">Цель достигнута. 🎉</div>';
+ if(!g.date)return '<div class="tip">Укажите срок цели, и я подскажу, сколько откладывать в месяц.</div>';
+ const t=today();
+ if(g.date<t)return '<div class="tip">Срок уже прошёл, осталось '+m(left)+'. Продлите срок, и я пересчитаю.</div>';
+ const dt=parse(g.date),dn=parse(t);
+ const mm=Math.max(1,(dt.getUTCFullYear()-dn.getUTCFullYear())*12+(dt.getUTCMonth()-dn.getUTCMonth()));
+ const need=Math.ceil(left/mm);
+ const[a,b]=monthRange(),free=sum(a,b,'income')-sum(a,b,'expense');
+ const note=free>=need?'В этом месяце свободно '+m(free)+', этого хватает.':'В этом месяце свободно '+m(Math.max(0,free))+', этого мало: нужно больше или перенести срок.';
+ return '<div class="tip">Осталось '+m(left)+'. До срока около '+mm+' мес., нужно откладывать примерно '+m(need)+' в месяц. '+note+'</div>';
+}
 const V={
 home(){const[a,b]=monthRange(),inc=sum(a,b,'income'),exp=sum(a,b,'expense'),bal=sum('0000','9999','income')-sum('0000','9999','expense'),nb=nextBills().slice(0,3);
  return `<div class="top"><div><h1>${S.settings.name?'Привет, '+esc(S.settings.name):'MY FINANCE'}</h1><div class="sub">Сегодня ${fd(today())}</div></div></div>
@@ -191,7 +205,7 @@ budget(){const[a,b]=monthRange();
  <div class="card"><h2>Обязательные платежи</h2>${S.bills.map((x,i)=>`<div class="row"><div class="grow"><div class="t">${esc(x.name)}</div><div class="sub">каждый месяц, ${x.day}-го числа</div></div><div class="num">${m(x.amount)}</div><button class="x" data-a="delBill" data-v="${i}" aria-label="Удалить">✕</button></div>`).join('')||'<p class="empty">Пока пусто.</p>'}
  <label for="b-n">Новый платёж</label><input id="b-n" placeholder="Название, например «Аренда»"><div class="two" style="margin-top:8px"><input id="b-a" type="number" inputmode="decimal" placeholder="Сумма"><input id="b-d" type="number" min="1" max="28" placeholder="День месяца (1–28)"></div><div class="err" id="berr"></div><button class="btn sm" data-a="addBill">Добавить платёж</button></div>`},
 goals(){return `<div class="top"><div><h1>Финансовые цели</h1><div class="sub">Накоплено всего: ${m(saved())}</div></div></div>
- ${S.goals.map((g,i)=>{const p=Math.min(100,g.saved/g.target*100);return `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><div class="t">${esc(g.name)}</div><button class="x" data-a="delGoal" data-v="${i}" aria-label="Удалить цель">✕</button></div><div class="sub">${m(g.saved)} из ${m(g.target)}${g.date?' · до '+fd(g.date):''}</div><div class="bar"><i class="ok" style="width:${p}%"></i></div><div class="sub" style="margin-top:6px">${Math.round(p)}%</div><div class="inl" style="margin-top:10px"><input id="gd${i}" type="number" inputmode="decimal" min="0" placeholder="Сумма пополнения"><button class="btn sm" data-a="dep" data-v="${i}">Пополнить</button></div></div>`}).join('')||'<div class="card"><p class="empty">Целей пока нет. Создайте первую ниже.</p></div>'}
+ ${S.goals.map((g,i)=>{const p=Math.min(100,g.saved/g.target*100);return `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><div class="t">${esc(g.name)}</div><button class="x" data-a="delGoal" data-v="${i}" aria-label="Удалить цель">✕</button></div><div class="sub">${m(g.saved)} из ${m(g.target)}${g.date?' · до '+fd(g.date):''}</div>${adv(g)}<div class="bar"><i class="ok" style="width:${p}%"></i></div><div class="sub" style="margin-top:6px">${Math.round(p)}%</div><div class="inl" style="margin-top:10px"><input id="gd${i}" type="number" inputmode="decimal" min="0" placeholder="Сумма пополнения"><button class="btn sm" data-a="dep" data-v="${i}">Пополнить</button></div></div>`}).join('')||'<div class="card"><p class="empty">Целей пока нет. Создайте первую ниже.</p></div>'}
  <div class="card"><h2>Новая цель</h2><label for="g-n">Название</label><input id="g-n" placeholder="Например, «Отпуск»"><div class="two"><div><label for="g-t">Сумма цели</label><input id="g-t" type="number" inputmode="decimal" min="1"></div><div><label for="g-d">Срок</label><input id="g-d" type="date"></div></div><div class="err" id="gerr"></div><button class="btn sm" data-a="addGoal">Создать цель</button></div>`},
 settings(){const s=S.settings;return `<div class="top"><h1>Настройки</h1></div>
  <div class="card"><h2>Профиль</h2><label for="s-n">Имя</label><input id="s-n" value="${esc(s.name)}" placeholder="Как к вам обращаться" data-c="name"></div>
